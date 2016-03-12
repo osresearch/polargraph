@@ -1,0 +1,1 @@
+picocom --flow hard --echo --imap lfcrlf -b 115200 /dev/ttyUSB2
