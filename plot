@@ -1,4 +1,6 @@
 #!/usr/bin/perl
+# Translate the vectors from a PJL file into gcode for the polargraph.
+# There is probably a better way to do this.
 use warnings;
 use strict;
 

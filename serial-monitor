@@ -1,1 +1,14 @@
-picocom --flow hard --echo --imap lfcrlf -b 115200 /dev/ttyUSB2
+#!/bin/sh
+# Run this to initialize the serial port and provide feedback
+# as the polargraph plots.
+#
+# FLOW CONTROL MUST BE TURNED ON.
+# Enable it with $ex 2
+# Otherwise the plot command will over-run the buffers.
+#
+exec picocom \
+	--flow hard \
+	--echo \
+	--imap lfcrlf \
+	-b 115200 \
+	/dev/ttyUSB2

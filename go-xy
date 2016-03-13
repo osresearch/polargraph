@@ -1,4 +1,7 @@
 #!/usr/bin/perl
+# Send the polargraph to a known location.
+# This will attempt to iterate to draw straight (not curved) lines,
+# but the tinyg doesn't seem to handle it well.
 use warnings;
 use strict;
 
