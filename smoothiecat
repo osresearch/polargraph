@@ -1,0 +1,51 @@
+#!/usr/bin/perl
+# The smoothieboard doesn't have flow control, so it is necessary
+# to wait for it to respond "ok" before sending another waypoint.
+use warnings;
+use strict;
+use Device::SerialPort;
+use Data::Dumper;
+use Time::HiRes 'usleep';
+
+my $dev_file = "/dev/tty.usbmodem1411";
+
+my $dev = Device::SerialPort->new($dev_file)
+	or die "$dev_file: $!\n";
+
+$dev->baudrate(115200);
+
+sub wait_ok
+{
+	my $dev = shift;
+	
+	for(1..10000)
+	{
+		my $in = $dev->input();
+		print "read: ", Dumper($in) if $in;
+		return if $in =~ /^ok/msg;
+		usleep(10000);
+	}
+
+	die "Did not receive ok from board\n";
+}
+
+# wait for the ok
+wait_ok($dev);
+
+# Read all the gcode lines from the file
+my @gcode = <>;
+my $line_count = @gcode;
+my $line_num = 0;
+
+printf "Read %d gcode commands\n", $line_count;
+
+for (@gcode)
+{
+	chomp;
+	$line_num++;
+	printf "%2d: %s\n", int($line_num * 100 / $line_count), $_;
+	$dev->write("$_\r\n");
+
+	# wait for the ok
+	wait_ok($dev);
+}

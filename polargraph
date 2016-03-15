@@ -8,13 +8,13 @@ use strict;
 # xy = 600,500 or so
 # separation between the two is 1120
 
-my $w = 1120;
-my $default_feed = 4000;
+my $w = 2501.9;
+my $default_feed = 3000;
 my $step_size = 40;
 
-my $ox = 300;
-my $oy = 200;
-my $scale = 0.06;
+my $ox = $w/2 - 600;
+my $oy = 1100 - 800;
+my $scale = 0.06 * 1.35;
 
 while(<>)
 {
@@ -27,7 +27,7 @@ while(<>)
 		my $feed = $default_feed;
 		if ($x =~ s/^PU//)
 		{
-			$feed = 10000;
+			$feed = 4000;
 		}
 
 		$x =~ s/^PD//;
