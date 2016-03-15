@@ -1,45 +1,82 @@
 #!/usr/bin/perl
 # Translate the vectors from a PJL file into gcode for the polargraph.
 # There is probably a better way to do this.
+# origin is at l1=2032 l2=2032 
+# separation between the two is 2.5m
 use warnings;
 use strict;
+use Getopt::Long qw/:config no_ignore_case/;
 
-# origin is at l1=800 l2=800 
-# xy = 600,500 or so
-# separation between the two is 1120
+my $usage = <<"";
+$0: Plot a set of vectors on the polargraph.
+Options:
+    -H | --home       Send the set-home command in the gcode
+    -w | --width N    Separation between the pulleys in mm
+    -l | --length N   Length of the two strings at the home position in mm
+    -f | --feed N     Feed rate for the motors in mm/sec
+    -n | --step N     Interpolation step size for straight lines in mm
+    -M | --motors-on  Leave the motors on after the plot (default off)
+    --offset x,y       Shift the origin to x,y in mm
+    --scale N         Scale the plot by this factor
 
-my $w = 2501.9;
-my $default_feed = 3000;
+my $width = 2501.9;
+my $home_length = 2032.0;
+my $default_feed = 2000;
 my $step_size = 40;
+my $motor_on = 0;
+my $send_home = 0;
+my $offset_x = 0;
+my $offset_y = 0;
 
-my $ox = $w/2 - 600;
-my $oy = 1100 - 800;
-my $scale = 0.06 * 1.35;
+my $scale = 1;
+
+GetOptions(
+	"H|home+"	=> \$send_home,
+	"w|width=f"	=> \$width,
+	"l|length=f"	=> \$home_length,
+	"f|feed=f"	=> \$default_feed,
+	"n|step=f"	=> \$step_size,
+	"x|offset-x=f"	=> \$offset_x,
+	"y|offset-y=f"	=> \$offset_y,
+	"scale=f"	=> \$scale,
+	"h|?|help"	=> sub { print $usage; exit 0; }
+) or die $usage;
+
+print "G92 X$home_length Y$home_length\n"
+	if $send_home;
 
 while(<>)
 {
 	chomp;
 	my @points = split /,/;
+	my @old;
 
-	for(my $i = 0 ; $i < @points ; $i+=2)
+	for(my $i = 2 ; $i < @points ; $i+=2)
 	{
 		my ($x,$y) = @points[$i,$i+1];
 		my $feed = $default_feed;
 		if ($x =~ s/^PU//)
 		{
-			$feed = 4000;
+			$feed = 5000;
+			@old = ();
 		}
 
 		$x =~ s/^PD//;
 
-		goxy($x,$y, $feed);
+		if (@old)
+		{
+			goxy_step(@old, $x,$y, $feed);
+		} else {
+			goxy($x,$y, $feed);
+		}
+		@old = ($x,$y);
 	}
 }
 
 
 sub goxy_step
 {
-	my ($x0,$y0,$x1,$y1) = @_;
+	my ($x0,$y0,$x1,$y1,$feed) = @_;
 
 	# iterate from x0,y0 to x1,y1
 	my $dx = $x1 - $x0;
@@ -52,11 +89,10 @@ sub goxy_step
 	{
 		$x0 += $dx / $steps;
 		$y0 += $dy / $steps;
-		goxy($x0,$y0);
-		#sleep(1);
+		goxy($x0,$y0,$feed);
 	}
 
-	goxy($x1,$y1);
+	goxy($x1,$y1,$feed);
 }
 
 
@@ -67,12 +103,16 @@ sub goxy
 	my $y = shift;
 	my $feed = shift || 1000;
 
-	$x = $x * $scale + $ox;
-	$y = $y * $scale + $oy;
+	# 0.06 is something to do with HPGL weirdness
+	$x = $x * $scale * 0.06 + $offset_x;
+	$y = $y * $scale * 0.06 + $offset_y;
 	
-	my $l1 = sqrt(($w-$x)*($w-$x) + $y*$y);
-	my $l2 = sqrt($x*$x + $y*$y);
+	my $l1 = sqrt($x*$x + $y*$y);
+	my $l2 = sqrt(($width-$x)*($width-$x) + $y*$y);
 
 	printf STDERR "%.3f %.3f -> %.3f %.3f\n", $x, $y, $l1, $l2;
 	printf "G1 X%.3f Y%.3f F%d\n", $l1, $l2, $feed;
 }
+
+# Turn off the motors if requested
+print "M18\n" unless $motor_on;

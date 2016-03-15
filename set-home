@@ -1,4 +1,0 @@
-#!/bin/sh
-# Initialize the polargraph at the home position with 176.5cm of
-# string spooled out from each motor.
-echo G92 X1765.5 Y1765.5 > /dev/tty.usbmodem1411
