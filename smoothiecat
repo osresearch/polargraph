@@ -21,8 +21,9 @@ sub wait_ok
 	for(1..10000)
 	{
 		my $in = $dev->input();
-		print "read: ", Dumper($in) if $in;
 		return if $in =~ /^ok/msg;
+
+		print "read: ", Dumper($in) if $in;
 		usleep(10000);
 	}
 
@@ -43,7 +44,7 @@ for (@gcode)
 {
 	chomp;
 	$line_num++;
-	printf "%2d: %s\n", int($line_num * 100 / $line_count), $_;
+	printf "%8.2f: %s\n", $line_num * 100 / $line_count, $_;
 	$dev->write("$_\r\n");
 
 	# wait for the ok
