@@ -45,13 +45,13 @@ GetOptions(
 print "G92 X$home_length Y$home_length\n"
 	if $send_home;
 
+my @old;
 while(<>)
 {
 	chomp;
 	my @points = split /,/;
-	my @old;
 
-	for(my $i = 2 ; $i < @points ; $i+=2)
+	for(my $i = 0 ; $i < @points ; $i+=2)
 	{
 		my ($x,$y) = @points[$i,$i+1];
 		my $feed = $default_feed;
@@ -62,6 +62,12 @@ while(<>)
 		}
 
 		$x =~ s/^PD//;
+
+		# 0.06 is something to do with HPGL weirdness
+		# no clue what 23.55 means in this case
+		$x = $x * $scale / 23.55 + $offset_x;
+		$y = $y * $scale / 23.55 + $offset_y;
+	
 
 		if (@old)
 		{
@@ -103,10 +109,6 @@ sub goxy
 	my $y = shift;
 	my $feed = shift || 1000;
 
-	# 0.06 is something to do with HPGL weirdness
-	$x = $x * $scale * 0.06 + $offset_x;
-	$y = $y * $scale * 0.06 + $offset_y;
-	
 	my $l1 = sqrt($x*$x + $y*$y);
 	my $l2 = sqrt(($width-$x)*($width-$x) + $y*$y);
 
