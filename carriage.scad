@@ -10,7 +10,7 @@ render() difference()
 	cylinder(d=25, h=20);
 
 	// shaft
-	translate([0,0,-1]) cylinder(d1=17, d2=19, h=22);
+	translate([0,0,1]) cylinder(d1=21, d2=22, h=22);
 
 	// M3 set screw, just in case
 	translate([0,5,5])
@@ -21,8 +21,8 @@ translate([0,0,10])
 for(angle=[-60,60])
 {
 rotate([90,0,angle]) {
-	translate([-2,0,0]) cylinder(d=2, h=20);
-	translate([+2,0,0]) cylinder(d=2, h=20);
+	translate([-3,0,0]) cylinder(d=3.25, h=20);
+	translate([+3,0,0]) cylinder(d=3.25, h=20);
 }
 }
 }
