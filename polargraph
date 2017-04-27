@@ -14,19 +14,23 @@ Options:
     -w | --width N    Separation between the pulleys in mm
     -l | --length N   Length of the two strings at the home position in mm
     -f | --feed N     Feed rate for the motors in mm/sec
+    -F | --transit N  Transit rate for the motors in mm/sec
     -n | --step N     Interpolation step size for straight lines in mm
     -M | --motors-on  Leave the motors on after the plot (default off)
-    --offset x,y       Shift the origin to x,y in mm
+    --offset x,y      Shift the origin to x,y in mm
     --scale N         Scale the plot by this factor
+    --steps N         Adjust the steps/mm to deal with maljusted printers
 
 my $width = 2501.9;
 my $home_length = 2032.0;
 my $default_feed = 2000;
+my $transit_feed = 2500;
 my $step_size = 40;
 my $motor_on = 0;
 my $send_home = 0;
 my $offset_x = 0;
 my $offset_y = 0;
+my $steps_per_step = 1;
 
 my $scale = 1;
 
@@ -35,19 +39,32 @@ GetOptions(
 	"w|width=f"	=> \$width,
 	"l|length=f"	=> \$home_length,
 	"f|feed=f"	=> \$default_feed,
+	"F|transit=f"	=> \$transit_feed,
 	"n|step=f"	=> \$step_size,
 	"x|offset-x=f"	=> \$offset_x,
 	"y|offset-y=f"	=> \$offset_y,
 	"scale=f"	=> \$scale,
+	"steps=f"	=> \$steps_per_step,
 	"h|?|help"	=> sub { print $usage; exit 0; }
 ) or die $usage;
 
+print "G90\nG92 X0 Y0\n";
 print "G92 X$home_length Y$home_length\n"
 	if $send_home;
 
+
 my @old;
+my $old_file = $ARGV[0];
+
 while(<>)
 {
+	if($ARGV ne $old_file)
+	{
+		$old_file = $ARGV;
+		print "M72 P2\n";
+		print "M71 (Marker Change)\n";
+	}
+
 	chomp;
 	my @points = split /,/;
 
@@ -57,7 +74,7 @@ while(<>)
 		my $feed = $default_feed;
 		if ($x =~ s/^PU//)
 		{
-			$feed = 5000;
+			$feed = $transit_feed;
 			@old = ();
 		}
 
@@ -112,9 +129,15 @@ sub goxy
 	my $l1 = sqrt($x*$x + $y*$y);
 	my $l2 = sqrt(($width-$x)*($width-$x) + $y*$y);
 
+	# fix for the makerbot software
+	$l1 = ($l1 - $home_length) * $steps_per_step;
+	$l2 = ($l2 - $home_length) * $steps_per_step;
+
 	printf STDERR "%.3f %.3f -> %.3f %.3f\n", $x, $y, $l1, $l2;
 	printf "G1 X%.3f Y%.3f F%d\n", $l1, $l2, $feed;
 }
 
 # Turn off the motors if requested
-print "M18\n" unless $motor_on;
+print "M18 X Y\n" unless $motor_on;
+print "M72 P1\n";
+print "M137\n";
