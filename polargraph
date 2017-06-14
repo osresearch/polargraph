@@ -17,6 +17,7 @@ Options:
     -F | --transit N  Transit rate for the motors in mm/sec
     -n | --step N     Interpolation step size for straight lines in mm
     -M | --motors-on  Leave the motors on after the plot (default off)
+    -r | --rotate     Rotate the PDF 90 degrees
     --offset x,y      Shift the origin to x,y in mm
     --scale N         Scale the plot by this factor
     --steps N         Adjust the steps/mm to deal with maljusted printers
@@ -31,11 +32,13 @@ my $send_home = 0;
 my $offset_x = 0;
 my $offset_y = 0;
 my $steps_per_step = 1;
+my $rotate = 0;
 
 my $scale = 1;
 
 GetOptions(
 	"H|home+"	=> \$send_home,
+	"r|rotate+"	=> \$rotate,
 	"w|width=f"	=> \$width,
 	"l|length=f"	=> \$home_length,
 	"f|feed=f"	=> \$default_feed,
@@ -71,6 +74,7 @@ while(<>)
 	for(my $i = 0 ; $i < @points ; $i+=2)
 	{
 		my ($x,$y) = @points[$i,$i+1];
+		($x,$y) = ($width - $y,$x) if $rotate;
 		my $feed = $default_feed;
 		if ($x =~ s/^PU//)
 		{
