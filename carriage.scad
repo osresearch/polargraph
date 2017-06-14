@@ -4,29 +4,37 @@
 $fn=60;
 
 // Pen holder in the middle
+module holder(d1, d2, endcap)
+{
 render() difference()
 {
 	// outside
-	cylinder(d=25, h=20);
+	cylinder(d=d2+4, h=20);
 
 	// shaft
-	translate([0,0,1]) cylinder(d1=21, d2=22, h=22);
+	translate([0,0,endcap ? 1 : -1])
+	cylinder(d1=d1, d2=d2, h=22);
 
 	// M3 set screw, just in case
+	if(false)
 	translate([0,5,5])
 	rotate([-90,0,0])
 	cylinder(d=3.25, h=10);
 
-translate([0,0,10]) 
-for(angle=[-60,60])
-{
-rotate([90,0,angle]) {
-	translate([-3,0,0]) cylinder(d=3.25, h=20);
-	translate([+3,0,0]) cylinder(d=3.25, h=20);
-}
+	// string holes
+	translate([0,0,10]) 
+	for(angle=[-60,60])
+	{
+		rotate([90,0,angle]) {
+			translate([-3,0,0]) cylinder(d=3.25, h=20);
+			translate([+3,0,0]) cylinder(d=3.25, h=20);
+		}
+	}
 }
 }
 
+translate([-13,0,0]) holder(20,21, true);
+translate([+13,0,0]) holder(18,19, false);
 
 
 /*
