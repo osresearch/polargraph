@@ -7,7 +7,8 @@ use Device::SerialPort;
 use Data::Dumper;
 use Time::HiRes 'usleep';
 
-my $dev_file = "/dev/tty.usbmodem1411";
+my $dev_file = shift || "/dev/ttyACM1";
+#my $dev_file = "/dev/tty.usbmodem1411";
 
 my $dev = Device::SerialPort->new($dev_file)
 	or die "$dev_file: $!\n";
