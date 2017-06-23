@@ -36,6 +36,9 @@ my $rotate = 0;
 
 my $scale = 1;
 
+my $total_dist = 0;
+my $total_time = 0;
+
 GetOptions(
 	"H|home+"	=> \$send_home,
 	"r|rotate+"	=> \$rotate,
@@ -51,6 +54,21 @@ GetOptions(
 	"h|?|help"	=> sub { print $usage; exit 0; }
 ) or die $usage;
 
+# assume the zero-zero point is in the center (width/2) and
+# the triangles are right. length^2 = (width/2)^2 + height^2
+my $height = $home_length*$home_length - $width*$width/4.0;
+die "Width $width is too wide for length $home_length!\n"
+	if $height <= 0;
+$height = sqrt($height);
+printf STDERR "Computed height: %0.2fmm\n", $height;
+printf STDERR "0 0\n";
+printf STDERR "%.2f %.2f\n", $width, 0;
+printf STDERR "%.2f %.2f\n", $width, $height;
+printf STDERR "%.2f %.2f\n", 0, $height;
+printf STDERR "0 0\n\n";
+
+
+print "M999\n"; # reset any error condition
 print "G90\nG92 X0 Y0\n";
 print "G92 X$home_length Y$home_length\n"
 	if $send_home;
@@ -88,16 +106,33 @@ while(<>)
 		# no clue what 23.55 means in this case
 		$x = $x * $scale / 23.55 + $offset_x;
 		$y = $y * $scale / 23.55 + $offset_y;
-	
+
+		# if the $x and $y are outside of our bounding box,
+		# warn that this might not work
+		if ($x < 0 || $x > $width || $y < 0 || $y > $height)
+		{
+			printf STDERR "!!! %.02f,%.02f out of bounds\n", $x, $y;
+		}
 
 		if (@old)
 		{
 			goxy_step(@old, $x,$y, $feed);
+			my $dist = len(@old, $x, $y);
+			$total_dist += $dist;
+			$total_time += $dist / ($feed / 60.0);
 		} else {
 			goxy($x,$y, $feed);
 		}
 		@old = ($x,$y);
 	}
+}
+
+sub len
+{
+	my ($x1,$y1,$x2,$y2) = @_;
+	my $dx = $x2 - $x1;
+	my $dy = $y2 - $y1;
+	return sqrt($dx*$dx + $dy*$dy);
 }
 
 
@@ -141,7 +176,18 @@ sub goxy
 	printf "G1 X%.3f Y%.3f F%d\n", $l1, $l2, $feed;
 }
 
+# Send the marker back to home at the high speed
+printf "G1 X%.3f Y%.3f F%d\n", 0, 0, $transit_feed;
+
 # Turn off the motors if requested
 print "M18 X Y\n" unless $motor_on;
 print "M72 P1\n";
 print "M137\n";
+
+# Report some stats
+printf STDERR "Total %.02fm %.0fm%02.0fs\n",
+	$total_dist / 1000.0,
+	$total_time / 60,
+	$total_time % 60;
+
+
