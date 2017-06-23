@@ -1,0 +1,8 @@
+*.pdf
+*.gcode
+*.pjl
+*.svg
+*.stl
+.*.sw[op]
+*.zip
+*.ai
