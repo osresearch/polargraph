@@ -18,6 +18,7 @@ Options:
     -n | --step N     Interpolation step size for straight lines in mm
     -M | --motors-on  Leave the motors on after the plot (default off)
     -r | --rotate     Rotate the PDF 90 degrees
+    -p | --pause      Seconds to pause between layers
     --offset x,y      Shift the origin to x,y in mm
     --scale N         Scale the plot by this factor
     --steps N         Adjust the steps/mm to deal with maljusted printers
@@ -33,6 +34,7 @@ my $offset_x = 0;
 my $offset_y = 0;
 my $steps_per_step = 1;
 my $rotate = 0;
+my $pause_seconds = 1;
 
 my $scale = 1;
 
@@ -47,6 +49,7 @@ GetOptions(
 	"f|feed=f"	=> \$default_feed,
 	"F|transit=f"	=> \$transit_feed,
 	"n|step=f"	=> \$step_size,
+	"p|pause=f"	=> \$pause_seconds,
 	"x|offset-x=f"	=> \$offset_x,
 	"y|offset-y=f"	=> \$offset_y,
 	"scale=f"	=> \$scale,
@@ -77,6 +80,9 @@ print "G92 X$home_length Y$home_length\n"
 my @old;
 my $old_file = $ARGV[0];
 
+# separate lines by ;
+$/=';';
+
 while(<>)
 {
 	if($ARGV ne $old_file)
@@ -87,6 +93,18 @@ while(<>)
 	}
 
 	chomp;
+
+	# ignore anything other than pen up/down commands
+	next unless /^PU/ or /^PD/;
+
+	# a "PU" by itself is a layer change or end of file
+	if(/^PU$/)
+	{
+		print STDERR "pausing\n";
+		printf "G4 S%.2f\n", $pause_seconds;
+		next;
+	}
+
 	my @points = split /,/;
 
 	for(my $i = 0 ; $i < @points ; $i+=2)
