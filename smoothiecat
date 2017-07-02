@@ -32,7 +32,7 @@ sub wait_ok
 }
 
 # wait for the ok
-wait_ok($dev);
+#wait_ok($dev);
 
 # Read all the gcode lines from the file
 my @gcode = <>;
