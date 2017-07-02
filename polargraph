@@ -16,6 +16,7 @@ Options:
     -f | --feed N     Feed rate for the motors in mm/sec
     -F | --transit N  Transit rate for the motors in mm/sec
     -n | --step N     Interpolation step size for straight lines in mm
+    -a | --accel      Acceleration in mm/s/s (override config)
     -M | --motors-on  Leave the motors on after the plot (default off)
     -r | --rotate     Rotate the PDF 90 degrees
     -p | --pause      Seconds to pause between layers
@@ -27,7 +28,8 @@ my $width = 2501.9;
 my $home_length = 2032.0;
 my $default_feed = 2000;
 my $transit_feed = 2500;
-my $step_size = 40;
+my $acceleration;
+my $step_size = 10;
 my $motor_on = 0;
 my $send_home = 0;
 my $offset_x = 0;
@@ -40,6 +42,8 @@ my $scale = 1;
 
 my $total_dist = 0;
 my $total_time = 0;
+my $transit_dist = 0;
+my $transit_time = 0;
 
 GetOptions(
 	"H|home+"	=> \$send_home,
@@ -48,6 +52,7 @@ GetOptions(
 	"l|length=f"	=> \$home_length,
 	"f|feed=f"	=> \$default_feed,
 	"F|transit=f"	=> \$transit_feed,
+	"a|accel=f"	=> \$acceleration,
 	"n|step=f"	=> \$step_size,
 	"p|pause=f"	=> \$pause_seconds,
 	"x|offset-x=f"	=> \$offset_x,
@@ -70,15 +75,25 @@ printf STDERR "%.2f %.2f\n", $width, $height;
 printf STDERR "%.2f %.2f\n", 0, $height;
 printf STDERR "0 0\n\n";
 
+my $points_file = "/tmp/p";
+open POINTS, ">$points_file"
+	or die "$points_file: Unable to open temp file $!\n";
+
 
 print "M999\n"; # reset any error condition
+printf "M204 S%.0f\n", $acceleration if $acceleration;
+
 print "G90\nG92 X0 Y0\n";
 print "G92 X$home_length Y$home_length\n"
 	if $send_home;
 
 
+my @transit_old = (0,0);
 my @old;
-my $old_file = $ARGV[0];
+my $old_file = $ARGV[0] || "stdin";
+my $ol1 = 0;
+my $ol2 = 0;
+
 
 # separate lines by ;
 $/=';';
@@ -110,12 +125,11 @@ while(<>)
 	for(my $i = 0 ; $i < @points ; $i+=2)
 	{
 		my ($x,$y) = @points[$i,$i+1];
-		($x,$y) = ($width - $y,$x) if $rotate;
 		my $feed = $default_feed;
+		my $transit;
 		if ($x =~ s/^PU//)
 		{
-			$feed = $transit_feed;
-			@old = ();
+			$transit = 1;
 		}
 
 		$x =~ s/^PD//;
@@ -125,6 +139,9 @@ while(<>)
 		$x = $x * $scale / 23.55 + $offset_x;
 		$y = $y * $scale / 23.55 + $offset_y;
 
+		# swap the axis if we are rotating the image
+		($x,$y) = ($width - $y,$x) if $rotate;
+
 		# if the $x and $y are outside of our bounding box,
 		# warn that this might not work
 		if ($x < 0 || $x > $width || $y < 0 || $y > $height)
@@ -132,15 +149,19 @@ while(<>)
 			printf STDERR "!!! %.02f,%.02f out of bounds\n", $x, $y;
 		}
 
-		if (@old)
+		my $dist = len(@old, $x, $y);
+
+		if ($transit)
 		{
+			goxy($x,$y, $transit_feed);
+			$transit_dist += $dist;
+			$transit_time += $dist / ($transit_feed / 60.0);
+		} else {
 			goxy_step(@old, $x,$y, $feed);
-			my $dist = len(@old, $x, $y);
 			$total_dist += $dist;
 			$total_time += $dist / ($feed / 60.0);
-		} else {
-			goxy($x,$y, $feed);
 		}
+
 		@old = ($x,$y);
 	}
 }
@@ -153,6 +174,27 @@ sub len
 	return sqrt($dx*$dx + $dy*$dy);
 }
 
+sub compute_lengths
+{
+	my ($x,$y) = @_;
+
+	my $l1 = sqrt($x*$x + $y*$y);
+	my $l2 = sqrt(($width-$x)*($width-$x) + $y*$y);
+
+	# fix for the makerbot software
+	$l1 = ($l1 - $home_length) * $steps_per_step;
+	$l2 = ($l2 - $home_length) * $steps_per_step;
+
+	# compute how far this is in motor space from our last point
+	my $dl1 = $l1 - $ol1;
+	my $dl2 = $l2 - $ol2;
+	my $ldist = sqrt($dl1*$dl1 + $dl2*$dl2);
+	$ol1 = $l1;
+	$ol2 = $l2;
+
+	return ($l1,$l2,$ldist);
+}
+
 
 sub goxy_step
 {
@@ -163,19 +205,38 @@ sub goxy_step
 	my $dy = $y1 - $y0;
 	my $dist = sqrt($dx*$dx+$dy*$dy);
 
-	my $steps = int($dist/$step_size);
+	my $steps = int($dist/$step_size) + 1;
+	my $step_dist = $dist / $steps;
 
 	for(my $i = 0 ; $i < $steps ; $i++)
 	{
 		$x0 += $dx / $steps;
 		$y0 += $dy / $steps;
-		goxy($x0,$y0,$feed);
+
+		# compute the desired motor speed for this step
+		# so that the cartesian speed is constant.
+		my $step_feed = $feed;
+
+		#goxy($x0,$y0,$step_feed);
+
+		# compute how far we are moving in motor space
+		my ($l1,$l2,$ldist) = compute_lengths($x0,$y0);
+
+		# and compute how fast we have to move that distance
+		# to equal moving $dist/$steps at the feed rate
+		my $lfeed = $feed * $ldist / $step_dist;
+		
+		printf POINTS "%.3f %.3f -> %.3f %.3f @ %.3f %.3f\n", $x0, $y0, $l1, $l2, $lfeed, $step_dist;
+		printf "G1 X%.3f Y%.3f F%d\n", $l1, $l2, $lfeed;
 	}
 
-	goxy($x1,$y1,$feed);
+	# we had better be at x1,y1, or close enough for floating point
+	# so this goxy is not necessary
+	#goxy($x1,$y1,$feed);
 }
 
 
+# Move the pen somewhere, quickly
 sub goxy
 {
 	# convert from pts to something
@@ -183,15 +244,9 @@ sub goxy
 	my $y = shift;
 	my $feed = shift || 1000;
 
-	my $l1 = sqrt($x*$x + $y*$y);
-	my $l2 = sqrt(($width-$x)*($width-$x) + $y*$y);
-
-	# fix for the makerbot software
-	$l1 = ($l1 - $home_length) * $steps_per_step;
-	$l2 = ($l2 - $home_length) * $steps_per_step;
-
-	printf STDERR "%.3f %.3f -> %.3f %.3f\n", $x, $y, $l1, $l2;
-	printf "G1 X%.3f Y%.3f F%d\n", $l1, $l2, $feed;
+	my ($l1,$l2) = compute_lengths($x,$y);
+	printf POINTS "%.3f %.3f -> %.3f %.3f @ %.3f\n", $x, $y, $l1, $l2, $feed;
+	printf "G0 X%.3f Y%.3f F%d\n", $l1, $l2, $feed;
 }
 
 # Send the marker back to home at the high speed
@@ -203,9 +258,17 @@ print "M72 P1\n";
 print "M137\n";
 
 # Report some stats
-printf STDERR "Total %.02fm %.0fm%02.0fs\n",
+printf STDERR "Drawing %8.02fm %7.0f:%02.0f\n",
 	$total_dist / 1000.0,
 	$total_time / 60,
 	$total_time % 60;
+printf STDERR "Transit %8.02fm %7.0f:%02.0f\n",
+	$transit_dist / 1000.0,
+	$transit_time / 60,
+	$transit_time % 60;
+printf STDERR "Total   %8.02fm %7.0f:%02.0f\n",
+	($total_dist+$transit_dist) / 1000.0,
+	($total_time+$transit_time) / 60,
+	($total_time+$transit_time) % 60;
 
 
