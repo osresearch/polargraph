@@ -1,0 +1,117 @@
+#!/usr/bin/perl
+# Convert a PDF file into a list of vectors.
+use warnings;
+use strict;
+use IPC::Open2;
+
+my $file = shift;
+
+# Postscript code to extract numbers
+my $ps_code = <<EOF;
+	% Print a number
+	/=== {
+		(        ) cvs print
+	} def
+
+	% Extract the solid R, G or B vectors
+	/stroke {
+		%  check for solid red
+		currentrgbcolor 
+		0.0 eq 
+		exch 0.0 eq 
+		and 
+		exch 1.0 eq 
+		and 
+		%  check for solid blue
+		currentrgbcolor 
+		0.0 eq 
+		exch 1.0 eq 
+		and 
+		exch 0.0 eq 
+		and 
+		or 
+		%  check for solid blue
+		currentrgbcolor 
+		1.0 eq 
+		exch 0.0 eq 
+		and 
+		exch 0.0 eq 
+		and 
+		or 
+		{
+			%  solid red, green or blue
+			(P)=== 
+			currentrgbcolor 
+			(,)=== 
+			100 mul round cvi === 
+			(,)=== 
+			100 mul round cvi === 
+			(,)=== 
+			100 mul round cvi = 
+			flattenpath 
+			{ 
+				%  moveto
+				transform (M)=== 
+				round cvi === 
+				(,)=== 
+				round cvi =
+			}{
+				%  lineto
+				transform(L)=== 
+				round cvi === 
+				(,)=== 
+				round cvi =
+			}{
+				%  curveto (not implemented)
+			}{
+				%  closepath
+				(C)=
+			}
+			pathforall newpath
+		}
+		{
+			%  Default is to just stroke
+			stroke
+		}
+		ifelse
+	}bind def
+	/showpage {(X)= showpage}bind def
+EOF
+
+
+# Convert the file to postscript
+my $ps = `pdf2ps "$file" -`
+	or die "$file: Unable to convert to Postscript\n";
+
+# inject the vector code into the Postscript file
+$ps =~ s/^(%!.*?)$/$1\n$ps_code/ms
+	or die "$file: Postscript preamble missing?\n";
+
+open OUT, ">/tmp/test.ps";
+print OUT $ps;
+close OUT;
+
+# Process the Postscript to generate the vectors
+my $pid = open2(
+	\*VECTORS, # output from GS
+	\*POSTSCRIPT, # postscript to GS
+	"gs",
+	"-q",
+	"-dBATCH",
+	"-dNOPAUSE",
+	"-r600",
+	"-sDEVICE=bbox",
+	"-sOutputFile=/dev/null",
+	"-",
+) or die "ghostscript: failed to open: $!\n";
+
+print POSTSCRIPT $ps;
+close POSTSCRIPT;
+
+undef $/;
+my $vectors = <VECTORS>;
+close VECTORS;
+
+print $vectors;
+
+__END__
