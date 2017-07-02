@@ -3,11 +3,15 @@
 use warnings;
 use strict;
 use IPC::Open2;
+use Data::Dumper;
 
 my $file = shift;
 
 # Postscript code to extract numbers
 my $ps_code = <<EOF;
+	% Ensure nice smooth curves
+	1 setflat
+	
 	% Print a number
 	/=== {
 		(        ) cvs print
@@ -75,7 +79,7 @@ my $ps_code = <<EOF;
 		}
 		ifelse
 	}bind def
-	/showpage {(X)= showpage}bind def
+	%/showpage {(X)= showpage}bind def
 EOF
 
 
@@ -108,10 +112,65 @@ my $pid = open2(
 print POSTSCRIPT $ps;
 close POSTSCRIPT;
 
-undef $/;
-my $vectors = <VECTORS>;
-close VECTORS;
+my $color = 0;
+my @vectors;
+my $vector = [];
 
-print $vectors;
+while(<VECTORS>)
+{
+	#print;
+	chomp;
+	if(/^P,(\d+),(\d+),(\d+)$/)
+	{
+		if (@$vector > 1)
+		{
+			# store the one we've been building if we have
+			# more than one point
+			push @{$vectors[$color] ||= []}, $vector;
+			$vector = [];
+		}
+
+		# sort them into red/green/blue bins
+		$color = $1 == 100 ? 0 : $2 == 100 ? 1 : $3 == 100 ? 2 : 3;
+		next;
+	}
+
+	if(/^M(\d+),(\d+)$/)
+	{
+		if (@$vector > 1)
+		{
+			# store the one we've been building
+			push @{$vectors[$color] ||= []}, $vector;
+		}
+
+		$vector = [[$1,$2]];
+		next;
+	}
+
+	# Add a new line segment to our current vector
+	if(/^L(\d+),(\d+)$/)
+	{
+		my @pt = ($1,$2);
+		push @$vector, \@pt;
+		next;
+	}
+
+	# Close the loop
+	if(/^C/)
+	{
+		if (@$vector > 1)
+		{
+			push @$vector, $vector->[0];
+			push @{$vectors[$color] ||= []}, $vector;
+		}
+
+		$vector = [];
+		next;
+	}
+
+	warn "parse error: '$_'\n";
+}
+
+print Dumper(\@vectors);
 
 __END__
