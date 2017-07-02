@@ -172,6 +172,23 @@ while(<VECTORS>)
 	warn "parse error: '$_'\n";
 }
 
-print Dumper(\@vectors);
+#print Dumper(\@vectors);
+
+for my $vectors (@vectors)
+{
+	next unless $vectors;
+
+	for my $pts (@$vectors)
+	{
+		for my $pt (@$pts)
+		{
+			printf "%.3f,%.3f ", $pt->[0], $pt->[1];
+		}
+
+		print "\n";
+	}
+
+	print "\n";
+}
 
 __END__
