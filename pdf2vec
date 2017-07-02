@@ -6,6 +6,8 @@ use IPC::Open2;
 use Data::Dumper;
 
 my $file = shift;
+my $dpi = 600;
+my $scale = 25.4 / $dpi;
 
 # Postscript code to extract numbers
 my $ps_code = <<EOF;
@@ -103,7 +105,7 @@ my $pid = open2(
 	"-q",
 	"-dBATCH",
 	"-dNOPAUSE",
-	"-r600",
+	"-r$dpi",
 	"-sDEVICE=bbox",
 	"-sOutputFile=/dev/null",
 	"-",
@@ -143,15 +145,14 @@ while(<VECTORS>)
 			push @{$vectors[$color] ||= []}, $vector;
 		}
 
-		$vector = [[$1,$2]];
+		$vector = [[$1*$scale,$2*$scale]];
 		next;
 	}
 
 	# Add a new line segment to our current vector
 	if(/^L(\d+),(\d+)$/)
 	{
-		my @pt = ($1,$2);
-		push @$vector, \@pt;
+		push @$vector, [$1*$scale,$2*$scale];
 		next;
 	}
 
