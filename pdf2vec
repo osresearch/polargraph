@@ -48,7 +48,7 @@ my $ps_code = <<EOF;
 			%  solid red, green or blue
 			(P)=== 
 			currentrgbcolor 
-			(,)=== 
+			%(,)=== 
 			100 mul round cvi === 
 			(,)=== 
 			100 mul round cvi === 
@@ -93,9 +93,9 @@ my $ps = `pdf2ps "$file" -`
 $ps =~ s/^(%!.*?)$/$1\n$ps_code/ms
 	or die "$file: Postscript preamble missing?\n";
 
-open OUT, ">/tmp/test.ps";
-print OUT $ps;
-close OUT;
+#open OUT, ">/tmp/test.ps";
+#print OUT $ps;
+#close OUT;
 
 # Process the Postscript to generate the vectors
 my $pid = open2(
@@ -113,6 +113,20 @@ my $pid = open2(
 
 print POSTSCRIPT $ps;
 close POSTSCRIPT;
+
+while(<VECTORS>)
+{
+	# convert M and L positions from pixels to positions
+	if(/^([ML])(\d+),(\d+)$/)
+	{
+		printf "%s%.3f,%.3f\n", $1, $2*$scale, $3*$scale;
+		next;
+	}
+
+	print;
+}
+
+__END__
 
 my $color = 0;
 my @vectors;
