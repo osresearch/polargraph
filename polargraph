@@ -134,11 +134,6 @@ while(<>)
 
 		$x =~ s/^PD//;
 
-		# 0.06 is something to do with HPGL weirdness
-		# no clue what 23.55 means in this case
-		$x = $x * $scale / 23.55 + $offset_x;
-		$y = $y * $scale / 23.55 + $offset_y;
-
 		# swap the axis if we are rotating the image
 		($x,$y) = ($width - $y,$x) if $rotate;
 
