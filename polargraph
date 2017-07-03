@@ -26,7 +26,7 @@ Options:
 
 my $width = 2501.9;
 my $home_length = 2032.0;
-my $default_feed = 2000;
+my $feed = 2000;
 my $transit_feed = 2500;
 my $acceleration;
 my $step_size = 10;
@@ -50,7 +50,7 @@ GetOptions(
 	"r|rotate+"	=> \$rotate,
 	"w|width=f"	=> \$width,
 	"l|length=f"	=> \$home_length,
-	"f|feed=f"	=> \$default_feed,
+	"f|feed=f"	=> \$feed,
 	"F|transit=f"	=> \$transit_feed,
 	"a|accel=f"	=> \$acceleration,
 	"n|step=f"	=> \$step_size,
@@ -95,9 +95,6 @@ my $ol1 = 0;
 my $ol2 = 0;
 
 
-# separate lines by ;
-$/=';';
-
 while(<>)
 {
 	if($ARGV ne $old_file)
@@ -110,55 +107,43 @@ while(<>)
 	chomp;
 
 	# ignore anything other than pen up/down commands
-	next unless /^PU/ or /^PD/;
+	next unless /^[MPLZZ]/;
 
-	# a "PU" by itself is a layer change or end of file
-	if(/^PU$/)
+	# a "P" by itself is a layer change or end of file
+	if(/^P\s*(\d+)\s+(\d+)\s+(\d+)$/)
 	{
-		print STDERR "pausing\n";
+		print STDERR "layer $1 $2 $3\n";
 		printf "G4 S%.2f\n", $pause_seconds;
 		next;
 	}
 
-	my @points = split /,/;
+	my ($cmd,$x,$y) = /^([ML])\s*([-+\d.]+)\s+([-+\d.]+)$/
+		or next;
 
-	for(my $i = 0 ; $i < @points ; $i+=2)
+	# swap the axis if we are rotating the image
+	($x,$y) = ($width - $y,$x) if $rotate;
+
+	# if the $x and $y are outside of our bounding box,
+	# warn that this might not work
+	if ($x < 0 || $x > $width || $y < 0 || $y > $height)
 	{
-		my ($x,$y) = @points[$i,$i+1];
-		my $feed = $default_feed;
-		my $transit;
-		if ($x =~ s/^PU//)
-		{
-			$transit = 1;
-		}
-
-		$x =~ s/^PD//;
-
-		# swap the axis if we are rotating the image
-		($x,$y) = ($width - $y,$x) if $rotate;
-
-		# if the $x and $y are outside of our bounding box,
-		# warn that this might not work
-		if ($x < 0 || $x > $width || $y < 0 || $y > $height)
-		{
-			printf STDERR "!!! %.02f,%.02f out of bounds\n", $x, $y;
-		}
-
-		my $dist = len(@old, $x, $y);
-
-		if ($transit)
-		{
-			goxy($x,$y, $transit_feed);
-			$transit_dist += $dist;
-			$transit_time += $dist / ($transit_feed / 60.0);
-		} else {
-			goxy_step(@old, $x,$y, $feed);
-			$total_dist += $dist;
-			$total_time += $dist / ($feed / 60.0);
-		}
-
-		@old = ($x,$y);
+		printf STDERR "!!! %.02f,%.02f out of bounds\n", $x, $y;
 	}
+
+	my $dist = len(@old, $x, $y);
+
+	if ($cmd eq 'M')
+	{
+		goxy($x,$y, $transit_feed);
+		$transit_dist += $dist;
+		$transit_time += $dist / ($transit_feed / 60.0);
+	} else {
+		goxy_step(@old, $x,$y, $feed);
+		$total_dist += $dist;
+		$total_time += $dist / ($feed / 60.0);
+	}
+
+	@old = ($x,$y);
 }
 
 sub len

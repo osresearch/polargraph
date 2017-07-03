@@ -25,6 +25,13 @@ typedef struct
 // Red/Green/Blue
 #define VECTOR_PASSES 3
 
+// close enough for floating point work
+static inline int fpeq(double x, double y)
+{
+	const double eps = 1e-8;
+	return fabs(x-y) < eps;
+}
+
 
 static void
 vector_stats(
@@ -75,10 +82,10 @@ vector_stats(
 static void
 vector_create(
 	vectors_t * const vectors,
-	int x1,
-	int y1,
-	int x2,
-	int y2
+	double x1,
+	double y1,
+	double x2,
+	double y2
 )
 {
 	// Find the end of the list and, if vector optimization is
@@ -88,16 +95,15 @@ vector_create(
 	{
 		vector_t * const p = *iter;
 
-		if (p->x1 == x1 && p->y1 == y1
-		&&  p->x2 == x2 && p->y2 == y2)
+		if (fpeq(p->x1,x1) && fpeq(p->y1,y1)
+		&&  fpeq(p->x2,x2) && fpeq(p->y2,y2))
 			return;
 
-		if (p->x1 == x2 && p->y1 == y2
-		&&  p->x2 == x1 && p->y2 == y1)
+		if (fpeq(p->x1,x2) && fpeq(p->y1,y2)
+		&&  fpeq(p->x2,x1) && fpeq(p->y2,y1))
 			return;
 
-		if (x1 == x2
-		&&  y1 == y2)
+		if (fpeq(x1,x2) && fpeq(y1,y2))
 			return;
 
 		iter = &p->next;
@@ -124,11 +130,10 @@ vector_create(
  * Generate a list of vectors.
  *
  * The vector format is:
- * Pr,g,b -- Color of the vector
- * Mx,y -- Move (start a line at x,y)
- * Lx,y -- Line to x,y from the current position
- * C -- Closing line segment to the starting position
- * X -- end of file
+ * P r,g,b -- Color of the vector
+ * M x,y -- Move (start a line at x,y)
+ * L x,y -- Line to x,y from the current position
+ * Z -- Closing line segment to the starting position
  *
  * Multi segment vectors are split into individual vectors, which are
  * then passed into the topological sort routine.
@@ -160,7 +165,7 @@ vectors_parse(
 		{
 			// note that they will be in bgr order in the file
 			int r, g, b;
-			sscanf(buf+1, "%d,%d,%d", &b, &g, &r);
+			sscanf(buf+1, "%d %d %d", &b, &g, &r);
 			if (r == 0 && g != 0 && b == 0)
 			{
 				pass = 0;
@@ -182,7 +187,7 @@ vectors_parse(
 			// Start a new line.
 			// This also implicitly sets the
 			// current laser position
-			sscanf(buf+1, "%lf,%lf", &mx, &my);
+			sscanf(buf+1, "%lf %lf", &mx, &my);
 			lx = mx;
 			ly = my;
 			break;
@@ -190,13 +195,13 @@ vectors_parse(
 			// Add a line segment from the current
 			// point to the new point, and update
 			// the current point to the new point.
-			sscanf(buf+1, "%lf,%lf", &x, &y);
+			sscanf(buf+1, "%lf %lf", &x, &y);
 			vector_create(&vectors[pass], lx, ly, x, y);
 			count++;
 			lx = x;
 			ly = y;
 			break;
-		case 'C':
+		case 'Z':
 			// Closing segment from the current point
 			// back to the starting point
 			vector_create(&vectors[pass], lx, ly, mx, my);
@@ -213,12 +218,14 @@ vectors_parse(
 
 done:
 	fprintf(stderr, "read %u segments\n", count);
+/*
 	for (int i = 0 ; i < VECTOR_PASSES ; i++)
 	{
 		vector_stats(vectors[i].vectors);
 	}
 
 	fprintf(stderr, "---\n");
+*/
 
 	return vectors;
 }
@@ -337,7 +344,7 @@ vector_optimize(
 		cy = v->y2;
 	}
 
-	vector_stats(vs);
+	//vector_stats(vs);
 
 	// Now replace the list in the vectors object with this new one
 	vectors->vectors = vs;
@@ -359,23 +366,23 @@ output_vector(
 
 	while (v)
 	{
-		if (v->x1 != lx || v->y1 != ly)
+		if (fpeq(v->x1,lx) && fpeq(v->y1,ly))
 		{
+			// This is the continuation of a line, so
+			// just add additional points
+			fprintf(pjl_file, "L %.3f %.3f\n",
+				v->x2,
+				v->y2
+			);
+		} else {
 			// Stop the laser; we need to transit
 			// and then start the laser as we go to
 			// the next point.  Note initial ";"
-			fprintf(pjl_file, ";PU%.3f,%.3f;PD%.3f,%.3f",
-				v->y1,
+			fprintf(pjl_file, "\nM %.3f %.3f\nL %.3f %.3f\n",
 				v->x1,
-				v->y2,
-				v->x2
-			);
-		} else {
-			// This is the continuation of a line, so
-			// just add additional points
-			fprintf(pjl_file, ",%.3f,%.3f",
-				v->y2,
-				v->x2
+				v->y1,
+				v->x2,
+				v->y2
 			);
 		}
 
@@ -387,6 +394,7 @@ output_vector(
 		ly = v->y2;
 		v = v->next;
 	}
+	fprintf(pjl_file, "\n");
 }
 
 				
@@ -400,11 +408,22 @@ generate_vectors(
 
 	for (int i = 0 ; i < VECTOR_PASSES ; i++)
 	{
-		vector_optimize(&vectors[i]);
+		vectors_t * const vs = &vectors[i];
+
+		fprintf(stderr, "Group %d\n", i);
+		vector_stats(vs->vectors);
+		vector_optimize(vs);
+		vector_stats(vs->vectors);
 
 		const vector_t * v = vectors[i].vectors;
 
+		fprintf(pjl_file, "P %d %d %d\n",
+			i == 0 ? 100 : 0,
+			i == 1 ? 100 : 0,
+			i == 2 ? 100 : 0
+		);
 		output_vector(pjl_file, v);
+		fprintf(pjl_file, "\n\n");
 	}
 }
 

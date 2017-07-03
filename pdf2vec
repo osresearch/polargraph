@@ -15,9 +15,10 @@ my $ps_code = <<EOF;
 	1 setflat
 	
 	% Print a number
-	/=== {
+	/puts {
 		(        ) cvs print
 	} def
+	/putln {=} def
 
 	% Extract the solid R, G or B vectors
 	/stroke {
@@ -46,32 +47,37 @@ my $ps_code = <<EOF;
 		or 
 		{
 			%  solid red, green or blue
-			(P)=== 
+			(P ) puts 
 			currentrgbcolor 
-			%(,)=== 
-			100 mul round cvi === 
-			(,)=== 
-			100 mul round cvi === 
-			(,)=== 
-			100 mul round cvi = 
+			( ) puts 
+			100 mul round cvi puts 
+			( ) puts 
+			100 mul round cvi puts 
+			( ) puts 
+			100 mul round cvi putln 
+
+			% convert the curve to a series of points
+			% with moveto, lineto and closepath commands
 			flattenpath 
 			{ 
 				%  moveto
-				transform (M)=== 
-				round cvi === 
-				(,)=== 
-				round cvi =
+				(M ) puts 
+				transform
+				round cvi puts 
+				( ) puts 
+				round cvi putln
 			}{
 				%  lineto
-				transform(L)=== 
-				round cvi === 
-				(,)=== 
-				round cvi =
+				(L ) puts 
+				transform
+				round cvi puts 
+				( ) puts 
+				round cvi putln
 			}{
 				%  curveto (not implemented)
 			}{
 				%  closepath
-				(C)=
+				(Z) putln
 			}
 			pathforall newpath
 		}
@@ -117,9 +123,9 @@ close POSTSCRIPT;
 while(<VECTORS>)
 {
 	# convert M and L positions from pixels to positions
-	if(/^([ML])(\d+),(\d+)$/)
+	if(/^([ML])\s*(\d+)\s+(\d+)$/)
 	{
-		printf "%s%.3f,%.3f\n", $1, $2*$scale, $3*$scale;
+		printf "%s %.3f %.3f\n", $1, $2*$scale, $3*$scale;
 		next;
 	}
 
