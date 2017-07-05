@@ -33,6 +33,35 @@ static inline int fpeq(double x, double y)
 }
 
 
+static double
+vector_transit_len(
+	vector_t * v
+)
+{
+	double lx = 0;
+	double ly = 0;
+
+	double transit_len_sum = 0;
+
+	while (v)
+	{
+		double t_dx = lx - v->x1;
+		double t_dy = ly - v->y1;
+
+		double transit_len = sqrt(t_dx * t_dx + t_dy * t_dy);
+		if (transit_len != 0)
+			transit_len_sum += transit_len;
+
+		// Advance the point
+		lx = v->x2;
+		ly = v->y2;
+		v = v->next;
+	}
+
+	return transit_len_sum;
+}
+
+
 static void
 vector_stats(
 	vector_t * v
@@ -239,8 +268,8 @@ done:
 static vector_t *
 vector_find_closest(
 	vector_t * v,
-	const int cx,
-	const int cy
+	const double cx,
+	const double cy
 )
 {
 	double best_dist = 1e9;
@@ -277,7 +306,8 @@ vector_find_closest(
 		return NULL;
 
 	// Remove it from the list
-	*best->prev = best->next;
+	if (best->prev)
+		*best->prev = best->next;
 	if (best->next)
 		best->next->prev = best->prev;
 
@@ -307,20 +337,21 @@ vector_find_closest(
  *
  * This does not split vectors.
  */
-static int
+static vector_t *
 vector_optimize(
-	vectors_t * const vectors
+	vector_t ** vectors,
+	double *cx_ptr,
+	double *cy_ptr
 )
 {
-	static int cx = 0;
-	static int cy = 0;
-
 	vector_t * vs = NULL;
 	vector_t * vs_tail = NULL;
+	double cx = *cx_ptr;
+	double cy = *cy_ptr;
 
-	while (vectors->vectors)
+	while (*vectors)
 	{
-		vector_t * v = vector_find_closest(vectors->vectors, cx, cy);
+		vector_t * v = vector_find_closest(*vectors, cx, cy);
 		if (!v)
 		{
 			fprintf(stderr, "nothing close?\n");
@@ -345,13 +376,119 @@ vector_optimize(
 	}
 
 	//vector_stats(vs);
+	*cx_ptr = cx;
+	*cy_ptr = cy;
 
-	// Now replace the list in the vectors object with this new one
-	vectors->vectors = vs;
+	// update the pointers
+	*vectors = vs;
 	if (vs)
-		vs->prev = &vectors->vectors;
+		vs->prev = vectors;
 
-	return 0;
+	return vs;
+}
+
+
+/*
+ * Attempt to remove long transits.
+ * Find the longest transit and attempt to move that point
+ * to a closer point.  Then check to see if it reduces the transit.
+ * returns the reduction in distance
+ */
+static double
+vector_refine(
+	vector_t * const vector,
+	double *cx_ptr,
+	double *cy_ptr
+)
+{
+	const double initial_transit_len = vector_transit_len(vector);
+	double cx = *cx_ptr;
+	double cy = *cy_ptr;
+
+	// find the longest transit
+	vector_t * v = vector;
+	double max_transit = 0;
+	vector_t * transit_v = NULL;
+
+	while (v)
+	{
+		double t_dx = cx - v->x1;
+		double t_dy = cy - v->y1;
+
+		double transit_len = sqrt(t_dx * t_dx + t_dy * t_dy);
+		if (!fpeq(transit_len, 0) && max_transit < transit_len)
+		{
+			max_transit = transit_len;
+			transit_v = v;
+		}
+
+		// Advance the point
+		cx = v->x2;
+		cy = v->y2;
+		v = v->next;
+	}
+
+	if (!transit_v)
+	{
+		fprintf(stderr, "no longest transit?\n");
+		return 0;
+	}
+
+	fprintf(stderr, "Total transit: %.3f\n", initial_transit_len);
+	fprintf(stderr, "longest transit: %.3f: %.3f,%.3f\n",
+		max_transit,
+		transit_v->x1,
+		transit_v->y1
+	);
+
+	// then find the closest *end point* prior to this transit
+	vector_t * closest = NULL;
+	double min_dist = 1e9;
+	for(vector_t * v = vector ; v != transit_v ; v = v->next)
+	{
+		double dx = v->x2 - transit_v->x1;
+		double dy = v->y2 - transit_v->y1;
+		double dist = dx*dx + dy*dy;
+		if (min_dist < dist)
+			continue;
+		min_dist = dist;
+		closest = v;
+	}
+
+	if (!closest)
+	{
+		fprintf(stderr, "could not find a close one?\n");
+		return 0;
+	}
+
+	// move the longest transit destination to come after the
+	// one closest to it, then re-sort based on that point
+
+	// remove transit_v from the list
+	if (transit_v->next)
+		transit_v->next->prev = transit_v->prev;
+	if (transit_v->prev)
+		*transit_v->prev = transit_v->next;
+
+	// re-insert it after the closest one
+	transit_v->next = closest->next;
+	transit_v->prev = &closest->next;
+	closest->next = transit_v;
+	if (transit_v->next)
+		transit_v->next->prev = &transit_v->next;
+
+	// now sort the ones that come after it
+	double cx2 = transit_v->x2;
+	double cy2 = transit_v->y2;
+	vector_optimize(&transit_v->next, &cx2, &cy2);
+
+	const double new_transit_len = vector_transit_len(vector);
+	fprintf(stderr, "Refine transit %.3f\n", new_transit_len);
+
+	*cx_ptr = cx2;
+	*cy_ptr = cy2;
+
+	return initial_transit_len - new_transit_len;
 }
 
 
@@ -405,24 +542,43 @@ generate_vectors(
 )
 {
 	vectors_t * const vectors = vectors_parse(vector_file);
+	double lx = 0;
+	double ly = 0;
 
 	for (int i = 0 ; i < VECTOR_PASSES ; i++)
 	{
 		vectors_t * const vs = &vectors[i];
+		if (!vs->vectors)
+			continue;
 
 		fprintf(stderr, "Group %d\n", i);
 		vector_stats(vs->vectors);
-		vector_optimize(vs);
+		vector_optimize(
+			&vs->vectors,
+			&lx, &ly
+		);
+
 		vector_stats(vs->vectors);
 
-		const vector_t * v = vectors[i].vectors;
+/*
+		for(int i = 0 ; i < 8 ; i++)
+		{
+			double sx = vs->vectors->x1;
+			double sy = vs->vectors->y1;
+			if (vector_refine(vs->vectors, &sx, &sy) <= 0)
+				break;
+			lx = sx;
+			ly = sy;
+		}
+*/
+
 
 		fprintf(pjl_file, "P %d %d %d\n",
 			i == 0 ? 100 : 0,
 			i == 1 ? 100 : 0,
 			i == 2 ? 100 : 0
 		);
-		output_vector(pjl_file, v);
+		output_vector(pjl_file, vs->vectors);
 		fprintf(pjl_file, "\n\n");
 	}
 }
