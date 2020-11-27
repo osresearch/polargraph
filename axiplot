@@ -1,6 +1,9 @@
 #!/usr/bin/python
 from pyaxidraw import axidraw
+from math import sqrt
 import sys
+
+verbose = False
 
 ad = axidraw.AxiDraw()
 ad.interactive()
@@ -15,21 +18,71 @@ ad.connect()
 # P r g b -- Power level, or layer change (could pause here)
 # M x y   -- Move to x y coordinate
 # L x y   -- Line from the current positoin to the new coordinates
-for line in sys.stdin.readlines():
+lines = sys.stdin.readlines()
+total_draw = 0
+total_move = 0
+ox = 0
+oy = 0
+for line in lines:
 	words = line.split(' ')
 	if len(words) < 3:
-		print(len(words), words)
+		continue
+
+	cmd = words[0]
+	x = float(words[1])
+	y = float(words[2])
+	dx = x - ox
+	dy = y - oy
+	dist = sqrt(dx*dx + dy*dy)
+
+	if cmd == 'M':
+		total_move += dist
+		ox = x
+		oy = y
+	elif cmd =='L':
+		total_draw += dist
+		ox = x
+		oy = y
+
+print("Distance %.2f + %.2f\n" %  (total_draw, total_move))
+
+ox = 0
+oy = 0
+draw = 0
+move = 0
+for line in lines:
+	words = line.split(' ')
+	if len(words) < 3:
+		#print(len(words), words)
 		continue
 	cmd = words[0]
 	x = float(words[1])
 	y = float(words[2])
+	dx = x - ox
+	dy = y - oy
+	ox = x
+	oy = y
+	dist = sqrt(dx*dx + dy*dy)
+
 	if cmd == 'M':
-		print("MOVE %.3f %.3f" % (x,y), file=sys.stderr)
+		if verbose: print("MOVE %.3f %.3f" % (x,y), file=sys.stderr)
+		move += dist
 		ad.moveto(x,y)
 	elif cmd =='L':
-		print("LINE %.3f %.3f" % (x,y), file=sys.stderr)
+		if verbose: print("LINE %.3f %.3f" % (x,y), file=sys.stderr)
+		draw += dist
 		ad.lineto(x,y)
 
+	print("%6.2f%%: draw %9.2f / %6.0f  move %9.2f / %6.0f " % (
+		100.0 * (draw + move) / (total_draw + total_move),
+		draw,
+		total_draw,
+		move,
+		total_move
+	), file=sys.stderr, end='\r');
+
+
+print("", file=sys.stderr)
 
 ad.moveto(0,0)
 ad.usb_command("EM,0,0\r") # Turn off the motors
