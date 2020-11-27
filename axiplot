@@ -32,3 +32,5 @@ for line in sys.stdin.readlines():
 
 
 ad.moveto(0,0)
+ad.usb_command("EM,0,0\r") # Turn off the motors
+ad.disconnect()
