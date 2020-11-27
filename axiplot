@@ -1,0 +1,34 @@
+#!/usr/bin/python
+from pyaxidraw import axidraw
+import sys
+
+ad = axidraw.AxiDraw()
+ad.interactive()
+ad.options.units = 2 # mm instead of inches
+ad.options.model = 2 # AxiDraw V3/A3
+ad.options.speed_penup = 100 # full speed MOVETO
+ad.options.speed_pendown = 50 # half speed LINETO
+
+ad.connect()
+
+# The output of vecsort is ASCII lines of the format
+# P r g b -- Power level, or layer change (could pause here)
+# M x y   -- Move to x y coordinate
+# L x y   -- Line from the current positoin to the new coordinates
+for line in sys.stdin.readlines():
+	words = line.split(' ')
+	if len(words) < 3:
+		print(len(words), words)
+		continue
+	cmd = words[0]
+	x = float(words[1])
+	y = float(words[2])
+	if cmd == 'M':
+		print("MOVE %.3f %.3f" % (x,y), file=sys.stderr)
+		ad.moveto(x,y)
+	elif cmd =='L':
+		print("LINE %.3f %.3f" % (x,y), file=sys.stderr)
+		ad.lineto(x,y)
+
+
+ad.moveto(0,0)
